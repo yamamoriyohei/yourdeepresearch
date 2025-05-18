@@ -1,39 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthenticatedUserId } from "@/lib/auth";
+import { withAuthAndErrorHandling } from "@/lib/api-utils";
 import { getResearchSessionById } from "@/lib/supabaseCRUD";
 import { getJob } from "@/lib/jobQueue";
 
-export async function GET(req: NextRequest) {
-  try {
-    // ユーザー認証を確認
-    const { userId } = auth();
-
-    if (!userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
+/**
+ * リサーチの進捗状況を取得するハンドラー
+ * @param req リクエスト
+ * @param userId 認証済みユーザーID
+ * @returns 進捗状況
+ */
+async function getResearchStatus(req: NextRequest, userId: string) {
 
     // URLからセッションIDを取得
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId");
 
     if (!sessionId) {
-      return NextResponse.json({ error: "セッションIDが必要です" }, { status: 400 });
+      const error = new Error("セッションIDが必要です");
+      (error as any).code = "VALIDATION_ERROR";
+      throw error;
     }
 
     // セッション情報を取得
     const session = await getResearchSessionById(sessionId);
 
     if (!session) {
-      return NextResponse.json({ error: "セッションが見つかりません" }, { status: 404 });
+      const error = new Error("セッションが見つかりません");
+      (error as any).code = "NOT_FOUND";
+      throw error;
     }
 
     // セッションがこのユーザーのものか確認
     const sessionObj = session as { user_id?: string };
     if (sessionObj.user_id && sessionObj.user_id !== userId) {
-      return NextResponse.json(
-        { error: "このセッションにアクセスする権限がありません" },
-        { status: 403 }
-      );
+      const error = new Error("このセッションにアクセスする権限がありません");
+      (error as any).code = "FORBIDDEN";
+      throw error;
     }
 
     // ジョブキューから進捗状況を取得
@@ -97,12 +100,7 @@ export async function GET(req: NextRequest) {
             }
           : null,
     });
-  } catch (error: any) {
-    console.error("Research status API error:", error);
-
-    return NextResponse.json(
-      { error: `進捗状況の取得中にエラーが発生しました: ${error.message}` },
-      { status: 500 }
-    );
-  }
 }
+
+// 認証とエラーハンドリングを適用したエンドポイント
+export const GET = withAuthAndErrorHandling(getAuthenticatedUserId, getResearchStatus);

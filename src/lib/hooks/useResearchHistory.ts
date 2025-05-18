@@ -30,9 +30,18 @@ export function useResearchHistory(limit?: number) {
           throw new Error("履歴の取得に失敗しました");
         }
 
-        const data = await response.json();
-        console.log("Research history data:", data);
-        return data;
+        const responseData = await response.json();
+        console.log("Research history data:", responseData);
+
+        // 新しいレスポンス形式（success/data）に対応
+        if (responseData.success && Array.isArray(responseData.data)) {
+          return responseData.data;
+        } else if (Array.isArray(responseData)) {
+          return responseData;
+        } else {
+          console.error("Unexpected response format:", responseData);
+          return []; // 空の配列を返す
+        }
       } catch (error) {
         console.error("Error fetching research history:", error);
         throw error;
@@ -62,7 +71,14 @@ export function useResearchDetail(sessionId: string | null) {
         throw new Error("リサーチ詳細の取得に失敗しました");
       }
 
-      return await response.json();
+      const responseData = await response.json();
+
+      // 新しいレスポンス形式（success/data）に対応
+      if (responseData.success && responseData.data) {
+        return responseData.data;
+      } else {
+        return responseData;
+      }
     },
     // セッションIDがない場合は無効化
     enabled: !!sessionId,

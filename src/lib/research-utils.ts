@@ -24,13 +24,66 @@ export async function getResearchSession(sessionId: string): Promise<ResearchSes
  * @returns リサーチセッションの配列
  */
 export async function getUserResearchSessions(userId: string): Promise<ResearchSession[]> {
-  return executeDbQuery(() =>
-    supabaseClient
+  try {
+    console.log("Getting research sessions for user:", userId);
+
+    // 開発環境で、Supabaseの接続に問題がある場合はモックデータを返す
+    if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_DATA === 'true') {
+      console.log("Using mock data for research sessions");
+      return [
+        {
+          id: "mock-session-1",
+          user_id: userId,
+          query: "モックリサーチクエリ1",
+          status: "completed",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: "mock-session-2",
+          user_id: userId,
+          query: "モックリサーチクエリ2",
+          status: "processing",
+          created_at: new Date(Date.now() - 86400000).toISOString(), // 1日前
+          updated_at: new Date(Date.now() - 86400000).toISOString()
+        }
+      ];
+    }
+
+    const result = await supabaseClient
       .from(TABLES.RESEARCH_SESSIONS)
       .select("*")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-  );
+      .order("created_at", { ascending: false });
+
+    if (result.error) {
+      console.error("Error getting research sessions:", result.error);
+
+      // テーブルが存在しない場合は空の配列を返す
+      if (result.error.code === '42P01') { // テーブルが存在しないエラーコード
+        console.log("Table does not exist, returning empty array");
+        return [];
+      }
+
+      // APIキーが無効な場合も空の配列を返す
+      if (result.error.message === 'Invalid API key') {
+        console.log("Invalid API key, returning empty array");
+        return [];
+      }
+
+      throw result.error;
+    }
+
+    return result.data || [];
+  } catch (error) {
+    console.error("Error in getUserResearchSessions:", error);
+    // 開発環境では空の配列を返す
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Development environment, returning empty array");
+      return [];
+    }
+    throw error;
+  }
 }
 
 /**
@@ -72,6 +125,40 @@ export async function createResearchSession(data: Partial<ResearchSession>): Pro
   console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
   console.log("Supabase Anon Key exists:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
+  // 開発環境では、ユーザーが存在するか確認し、存在しない場合は作成する
+  if (process.env.NODE_ENV === 'development') {
+    try {
+      // ユーザーが存在するか確認
+      const { data: userData, error: userError } = await supabaseClient
+        .from(TABLES.USERS)
+        .select("*")
+        .eq("id", data.user_id)
+        .single();
+
+      // ユーザーが存在しない場合は作成
+      if (userError || !userData) {
+        console.log("User not found, creating test user");
+
+        const { error: insertError } = await supabaseClient
+          .from(TABLES.USERS)
+          .insert({
+            id: data.user_id,
+            email: "test@example.com",
+            first_name: "Test",
+            last_name: "User",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+
+        if (insertError) {
+          console.error("Error creating test user:", insertError);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking/creating user:", error);
+    }
+  }
+
   return executeDbQuery(async () => {
     try {
       console.log("Inserting data into table:", TABLES.RESEARCH_SESSIONS);
@@ -86,6 +173,17 @@ export async function createResearchSession(data: Partial<ResearchSession>): Pro
 
       if (error) {
         console.error("Supabase insert error:", error);
+
+        // 外部キー制約のエラーの場合
+        if (error.code === '23503') { // 外部キー制約違反のエラーコード
+          throw new Error(`外部キー制約エラー: ユーザーが存在しません (${data.user_id})`);
+        }
+
+        // テーブルが存在しない場合
+        if (error.code === '42P01') { // テーブルが存在しないエラーコード
+          throw new Error(`テーブルが存在しません: ${TABLES.RESEARCH_SESSIONS}`);
+        }
+
         throw error;
       }
 

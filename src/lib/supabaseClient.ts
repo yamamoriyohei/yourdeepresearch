@@ -8,6 +8,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
+// 環境変数の詳細をログに出力
+console.log("Supabase URL:", supabaseUrl);
+console.log("Supabase Anon Key (first 10 chars):", supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'not set');
+console.log("Supabase Service Key (first 10 chars):", supabaseServiceKey ? supabaseServiceKey.substring(0, 10) + '...' : 'not set');
+
 // 環境変数が設定されていない場合は警告を表示
 if (!supabaseUrl) {
   console.warn(

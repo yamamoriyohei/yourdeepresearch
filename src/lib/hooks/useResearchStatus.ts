@@ -28,13 +28,25 @@ export function useResearchStatus(
         };
       }
 
-      const response = await fetch(`/api/research/status?sessionId=${sessionId}`);
+      const response = await fetch(`/api/research/status?sessionId=${sessionId}`, {
+        credentials: 'include', // 認証情報を含める
+      });
 
       if (!response.ok) {
-        throw new Error("進捗状況の取得に失敗しました");
+        const errorData = await response.json().catch(() => null);
+        console.error("Error fetching research status:", errorData);
+        throw new Error(`エラーが発生しました: ${errorData?.error?.message || "進捗状況の取得に失敗しました"}`);
+
       }
 
-      return await response.json();
+      const responseData = await response.json();
+
+      // 新しいレスポンス形式（success/data）に対応
+      if (responseData.success && responseData.data) {
+        return responseData.data;
+      } else {
+        return responseData;
+      }
     },
     // 2秒ごとにポーリング (処理中のみ)
     refetchInterval: (query) => {

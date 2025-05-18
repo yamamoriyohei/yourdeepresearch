@@ -109,18 +109,74 @@ export async function getResearchSessionsByUserId(userId: string) {
 
 // リサーチセッション取得
 export async function getResearchSessionById(sessionId: string) {
-  const { data, error } = await supabaseClient
-    .from(TABLES.RESEARCH_SESSIONS)
-    .select(
-      `*,
-      ${TABLES.RESEARCH_RESULTS}(*),
-      ${TABLES.RESEARCH_RESULTS}.${TABLES.SOURCES}(*)`
-    )
-    .eq("id", sessionId)
-    .single();
+  try {
+    console.log(`Fetching research session with ID: ${sessionId}`);
 
-  if (error) throw error;
-  return data;
+    // まずセッション情報のみを取得
+    const { data: session, error: sessionError } = await supabaseClient
+      .from(TABLES.RESEARCH_SESSIONS)
+      .select('*')
+      .eq("id", sessionId)
+      .single();
+
+    if (sessionError) {
+      console.error(`Error fetching session: ${sessionError.message}`);
+      throw sessionError;
+    }
+
+    if (!session) {
+      console.log(`No session found with ID: ${sessionId}`);
+      return null;
+    }
+
+    // 次にリサーチ結果を取得
+    const { data: results, error: resultsError } = await supabaseClient
+      .from(TABLES.RESEARCH_RESULTS)
+      .select('*')
+      .eq("session_id", sessionId);
+
+    if (resultsError) {
+      console.error(`Error fetching results: ${resultsError.message}`);
+      // 結果取得のエラーは無視してセッション情報のみ返す
+      return session;
+    }
+
+    // 結果があれば、それぞれのソースを取得
+    if (results && results.length > 0) {
+      const resultId = results[0].id;
+
+      const { data: sources, error: sourcesError } = await supabaseClient
+        .from(TABLES.SOURCES)
+        .select('*')
+        .eq("research_result_id", resultId);
+
+      if (sourcesError) {
+        console.error(`Error fetching sources: ${sourcesError.message}`);
+        // ソース取得のエラーは無視
+        return {
+          ...session,
+          research_results: results
+        };
+      }
+
+      // 全ての情報を結合して返す
+      return {
+        ...session,
+        research_results: [
+          {
+            ...results[0],
+            sources: sources || []
+          }
+        ]
+      };
+    }
+
+    // 結果がない場合はセッション情報のみ返す
+    return session;
+  } catch (error) {
+    console.error(`Error in getResearchSessionById: ${error.message}`);
+    throw error;
+  }
 }
 
 // リサーチセッションのステータス更新
@@ -158,14 +214,47 @@ export async function saveResearchResult(resultData: Omit<ResearchResult, "id">)
 
 // リサーチ結果取得
 export async function getResearchResultById(resultId: string) {
-  const { data, error } = await supabaseClient
-    .from(TABLES.RESEARCH_RESULTS)
-    .select(`*, ${TABLES.SOURCES}(*)`)
-    .eq("id", resultId)
-    .single();
+  try {
+    console.log(`Fetching research result with ID: ${resultId}`);
 
-  if (error) throw error;
-  return data;
+    // まず結果情報のみを取得
+    const { data: result, error: resultError } = await supabaseClient
+      .from(TABLES.RESEARCH_RESULTS)
+      .select('*')
+      .eq("id", resultId)
+      .single();
+
+    if (resultError) {
+      console.error(`Error fetching result: ${resultError.message}`);
+      throw resultError;
+    }
+
+    if (!result) {
+      console.log(`No result found with ID: ${resultId}`);
+      return null;
+    }
+
+    // 次にソース情報を取得
+    const { data: sources, error: sourcesError } = await supabaseClient
+      .from(TABLES.SOURCES)
+      .select('*')
+      .eq("research_result_id", resultId);
+
+    if (sourcesError) {
+      console.error(`Error fetching sources: ${sourcesError.message}`);
+      // ソース取得のエラーは無視して結果情報のみ返す
+      return result;
+    }
+
+    // 結果とソースを結合して返す
+    return {
+      ...result,
+      sources: sources || []
+    };
+  } catch (error) {
+    console.error(`Error in getResearchResultById: ${error.message}`);
+    throw error;
+  }
 }
 
 // --- ソース関連の操作 ---

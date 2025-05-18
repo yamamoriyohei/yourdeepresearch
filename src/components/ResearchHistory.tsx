@@ -132,6 +132,8 @@ export default function ResearchHistory() {
           <LoadingSkeleton />
         ) : error ? (
           <ErrorDisplay error={error} onRefresh={() => refetch()} />
+        ) : !sessions || !Array.isArray(sessions) ? (
+          <ErrorDisplay error={new Error("データ形式が無効です")} onRefresh={() => refetch()} />
         ) : sessions.length === 0 ? (
           <EmptyHistory onNewResearch={handleNewResearch} />
         ) : (

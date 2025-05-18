@@ -82,53 +82,62 @@ export async function POST(req: Request) {
       }
 
       try {
-        let existingProfile = await getUserById(userId);
-        const profileData = {
-          id: userId,
-          username: username || (emailAddress ? emailAddress.split("@")[0] : undefined),
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
-        };
+        // ユーザー情報を取得
+        const firstName = evt.data.first_name || '';
+        const lastName = evt.data.last_name || '';
+        const email = emailAddress || '';
 
-        if (existingProfile) {
-          console.log(`Updating profile for user ID: ${userId}`);
-          await updateUserProfile(userId, profileData);
-        } else {
-          console.log(`Creating profile for new user ID: ${userId}`);
-          // If your Supabase `profiles` table is set up to auto-create from auth.users,
-          // this explicit insert might not be needed if Clerk user maps to Supabase auth user.
-          // However, if Clerk is the sole source of truth for user creation events pushed to your DB,
-          // you would insert here.
-          // For simplicity, we assume updateUserProfile can handle upsert or you have a separate create.
-          // Let's refine this based on the `supabaseCRUD.ts` (it has separate create/update)
-          // We need a createProfile function or ensure `profiles` table is created via Supabase auth trigger.
-          // For now, we'll attempt an update, and if it fails due to no existing record, that's an issue with setup.
-          // A better approach is to check if user exists, then create or update.
-          // The `supabaseCRUD.ts` has `getUserProfile`. We can use that.
+        // ユーザーテーブルにユーザー情報を挿入または更新
+        console.log(`Upserting user data for user ID: ${userId}`);
 
-          // Let's assume `profiles` table has `id` as primary key and it's a UUID from Clerk.
-          // We need to ensure the `profiles` table allows direct inserts if not tied to `auth.users` via trigger.
-          const { data, error } = await supabase
+        // サービスロールキーを使用してRLSをバイパス
+        const { data: userData, error: userError } = await supabaseAdmin
+          .from("users")
+          .upsert([
+            {
+              id: userId,
+              email: email,
+              first_name: firstName,
+              last_name: lastName,
+              avatar_url: avatarUrl,
+              updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            }
+          ])
+          .select()
+          .single();
+
+        if (userError) {
+          console.error("Error upserting user via webhook:", userError);
+          throw userError;
+        }
+
+        console.log("User data upserted successfully:", userData);
+
+        // プロファイルテーブルが存在する場合は、そちらも更新
+        try {
+          const { data: profileData, error: profileError } = await supabaseAdmin
             .from("profiles")
-            .insert([profileData])
+            .upsert([
+              {
+                id: userId,
+                username: username || (email ? email.split("@")[0] : ''),
+                avatar_url: avatarUrl,
+                updated_at: new Date().toISOString()
+              }
+            ])
             .select()
             .single();
-          if (error) {
-            console.error("Error creating profile via webhook:", error);
-            // Potentially try an update if insert fails due to conflict (though unlikely with UUIDs if new)
-            // This logic might need refinement based on your exact DB schema and triggers.
-            // If RLS is on, the webhook's server-side call needs appropriate permissions.
-            // Often, webhooks use a service_role key for Supabase for elevated privileges.
-            // For now, this assumes anon key has insert rights or RLS allows it (unlikely for general insert).
-            // THIS IS A CRITICAL POINT: Webhooks usually need service_role access to Supabase.
-            // The current `supabaseClient.ts` uses anon key.
-            // For a production webhook, you'd initialize a separate Supabase client with the service_role key.
-            console.warn(
-              "Webhook attempting to write to Supabase with anon key. This might fail due to RLS. Consider using service_role key for webhooks."
-            );
+
+          if (profileError) {
+            // プロファイルテーブルが存在しない場合はエラーを無視
+            console.warn("Profile table might not exist or other error:", profileError);
           } else {
-            console.log("Profile created/updated via webhook:", data);
+            console.log("Profile data upserted successfully:", profileData);
           }
+        } catch (profileError) {
+          // プロファイル更新のエラーはメインの処理に影響しないようにする
+          console.warn("Error updating profile, but user update was successful:", profileError);
         }
       } catch (dbError) {
         console.error("Database error handling user.created/updated webhook:", dbError);
@@ -137,14 +146,28 @@ export async function POST(req: Request) {
       break;
 
     case "user.deleted":
-      // Handle user deletion, e.g., anonymize or delete user data from Supabase
-      // Be careful with cascading deletes or data retention policies.
+      // ユーザー削除の処理
       const deletedUserId = evt.data.id;
       if (deletedUserId) {
-        console.log(
-          `User deleted event for user ID: ${deletedUserId}. Implement deletion logic if needed.`
-        );
-        // Example: await supabase.from("profiles").delete().eq("id", deletedUserId);
+        console.log(`User deleted event for user ID: ${deletedUserId}. Deleting user data.`);
+
+        try {
+          // サービスロールキーを使用してRLSをバイパス
+          const { error } = await supabaseAdmin
+            .from("users")
+            .delete()
+            .eq("id", deletedUserId);
+
+          if (error) {
+            console.error("Error deleting user data:", error);
+            throw error;
+          }
+
+          console.log(`User data deleted successfully for user ID: ${deletedUserId}`);
+        } catch (deleteError) {
+          console.error("Error handling user deletion:", deleteError);
+          return new Response("Error: Failed to delete user data", { status: 500 });
+        }
       } else {
         console.warn("User ID not found in webhook payload for user.deleted event.");
       }

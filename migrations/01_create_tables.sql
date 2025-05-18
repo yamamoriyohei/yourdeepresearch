@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ユーザーテーブル
 CREATE TABLE IF NOT EXISTS public.users (
-    id UUID PRIMARY KEY, -- Clerkのユーザーと一致するID
+    id TEXT PRIMARY KEY, -- Clerkのユーザーと一致するID
     email TEXT NOT NULL,
     first_name TEXT,
     last_name TEXT,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- リサーチセッションテーブル
 CREATE TABLE IF NOT EXISTS public.research_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     query TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
